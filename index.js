@@ -52,13 +52,13 @@ function buildGenderMenu() {
     .addOptions([
       {
         label: "Boy's",
-        description: "Langsung dapat role Gentleman",
+        description: "Role para lelaki tangguh",
         value: "boy",
         emoji: "🚹"
       },
       {
         label: "Girl's",
-        description: "Butuh verifikasi via voice bersama ADMIN",
+        description: "Role wanita, butuh verif by ADMIN",
         value: "girl",
         emoji: "🌸"
       }
