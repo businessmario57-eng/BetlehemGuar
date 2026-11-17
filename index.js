@@ -8,8 +8,7 @@ const {
   GatewayIntentBits,
   EmbedBuilder,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
+  StringSelectMenuBuilder,
   MessageFlags
 } = require("discord.js");
 
@@ -42,6 +41,31 @@ const ROLE_GENTLEMAN = "1488390481908863067";
 // pakai __dirname supaya file selalu di folder bot, walau bot dijalankan dari folder lain
 const PANEL_MESSAGE_FILE = path.join(__dirname, "panel.json");
 const PANEL_TITLE = "Gender Catalog";
+// voice channel untuk verifikasi Ladies (ganti kalau beda dengan VC bot)
+const VERIF_VOICE_ID = process.env.VERIF_VOICE_ID || VOICE_CHANNEL_ID;
+const PANEL_IMAGE = "https://media.discordapp.net/attachments/1487590787284734143/1494745021381873835/Black_and_Silver_Star_Dust_Love_Facebook_Cover_1.png";
+
+function buildGenderMenu() {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("gender_select")
+    .setPlaceholder("✨ Klik di sini untuk memilih roles!")
+    .addOptions([
+      {
+        label: "Boy's",
+        description: "Langsung dapat role Gentleman",
+        value: "boy",
+        emoji: "🚹"
+      },
+      {
+        label: "Girl's",
+        description: "Butuh verifikasi via voice bersama ADMIN",
+        value: "girl",
+        emoji: "🌸"
+      }
+    ]);
+
+  return new ActionRowBuilder().addComponents(menu);
+}
 
 let connection;
 
@@ -135,26 +159,14 @@ async function sendOrUpdatePanel() {
 `Silahkan pilih roles sesuai dengan gender kamu. Untuk role Ladies silahkan contact ADMIN untuk melakukan verifikasi.
 
 🚹┃ **Boy's**
-Langsung klik tombol di bawah.
+Langsung pilih melalui dropdown.
 
 🌸┃ **Girl's**
 Harus melalui verifikasi (Join Voice).`
     )
-    .setImage("https://media.discordapp.net/attachments/1487590787284734143/1494745021381873835/Black_and_Silver_Star_Dust_Love_Facebook_Cover_1.png");
+    .setImage(PANEL_IMAGE);
 
-  const btnBoy = new ButtonBuilder()
-    .setCustomId("gender_boy")
-    .setLabel("Boy's")
-    .setEmoji("🚹")
-    .setStyle(ButtonStyle.Primary);
-
-  const btnGirl = new ButtonBuilder()
-    .setCustomId("gender_girl")
-    .setLabel("Girl's")
-    .setEmoji("🌸")
-    .setStyle(ButtonStyle.Secondary);
-
-  const row = new ActionRowBuilder().addComponents(btnBoy, btnGirl);
+  const row = buildGenderMenu();
 
   if (panelMsg) {
     try {
@@ -202,13 +214,19 @@ client.on("messageCreate", async (msg) => {
 });
 
 // =======================
-// 🎯 BUTTON HANDLER
+// 🎯 DROPDOWN HANDLER
 // =======================
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+  if (!interaction.isStringSelectMenu()) return;
+  if (interaction.customId !== "gender_select") return;
+
+  const choice = interaction.values[0];
+
+  // reset dropdown ke placeholder supaya bisa dipilih ulang
+  interaction.message.edit({ components: [buildGenderMenu()] }).catch(() => {});
 
   // 🚹 BOY'S
-  if (interaction.customId === "gender_boy") {
+  if (choice === "boy") {
     const member = interaction.member;
 
     if (member.roles.cache.has(ROLE_GENTLEMAN)) {
@@ -245,9 +263,35 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   // 🌸 GIRL'S
-  if (interaction.customId === "gender_girl") {
+  if (choice === "girl") {
+    const embed = new EmbedBuilder()
+      .setColor(0xff69b4)
+      .setAuthor({
+        name: "BETLEHEM • Ladies Verification",
+        iconURL: interaction.guild.iconURL() || undefined
+      })
+      .setTitle("🌸 Hai, Ladies!")
+      .setDescription(
+`Role **Girl's** wajib melalui **verifikasi** dulu ya, biar server tetap aman & nyaman 💕
+
+**📋 Cara Verifikasi**
+> **1.** Join voice <#${VERIF_VOICE_ID}>
+> **2.** Mention / hubungi **ADMIN** yang sedang online
+> **3.** Verifikasi singkat lewat voice 🎙️
+> **4.** Role akan diberikan oleh ADMIN ✨`
+      )
+      .addFields(
+        { name: "⏱️ Estimasi", value: "± 1–5 menit", inline: true },
+        { name: "🎧 Syarat", value: "Mic aktif", inline: true }
+      )
+      .setThumbnail(interaction.user.displayAvatarURL())
+      .setFooter({ text: "BETLEHEM • Role System" })
+      .setTimestamp();
+
+    console.log(`🌸 ${interaction.user.tag} pilih Girl's`);
+
     return interaction.reply({
-      content: "🌸 Untuk role **Girl's**, silahkan join voice verifikasi dan hubungi **ADMIN** ya!",
+      embeds: [embed],
       flags: MessageFlags.Ephemeral
     });
   }
