@@ -275,10 +275,9 @@ client.on("interactionCreate", async (interaction) => {
 `Role **Girl's** wajib melalui **verifikasi** dulu ya, biar server tetap aman & nyaman 💕
 
 **📋 Cara Verifikasi**
-> **1.** Join voice <#${VERIF_VOICE_ID}>
-> **2.** Mention / hubungi **ADMIN** yang sedang online
-> **3.** Verifikasi singkat lewat voice 🎙️
-> **4.** Role akan diberikan oleh ADMIN ✨`
+> **1.** Mention / hubungi **ADMIN** yang sedang online
+> **2.** Verifikasi singkat lewat voice 🎙️
+> **3.** Role akan diberikan oleh ADMIN ✨`
       )
       .addFields(
         { name: "⏱️ Estimasi", value: "± 1–5 menit", inline: true },
