@@ -1,13 +1,16 @@
 require("dotenv").config();
 
 const fs = require("fs");
+const path = require("path");
 
 const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
   ActionRowBuilder,
-  StringSelectMenuBuilder
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags
 } = require("discord.js");
 
 const {
@@ -36,7 +39,9 @@ const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 
 const PANEL_CHANNEL_ID = "1494735880760328444";
 const ROLE_GENTLEMAN = "1488390481908863067";
-const PANEL_MESSAGE_FILE = "./panel.json";
+// pakai __dirname supaya file selalu di folder bot, walau bot dijalankan dari folder lain
+const PANEL_MESSAGE_FILE = path.join(__dirname, "panel.json");
+const PANEL_TITLE = "Gender Catalog";
 
 let connection;
 
@@ -79,55 +84,91 @@ async function connectToVC() {
 // =======================
 // 📦 PANEL SYSTEM
 // =======================
+function loadPanelId() {
+  try {
+    return JSON.parse(fs.readFileSync(PANEL_MESSAGE_FILE, "utf8")).messageId || null;
+  } catch {
+    return null;
+  }
+}
+
+function savePanelId(id) {
+  try {
+    fs.writeFileSync(PANEL_MESSAGE_FILE, JSON.stringify({ messageId: id }));
+  } catch (err) {
+    console.log("⚠️ Gagal simpan panel.json:", err.message);
+  }
+}
+
 async function sendOrUpdatePanel() {
   const channel = await client.channels.fetch(PANEL_CHANNEL_ID).catch(() => null);
   if (!channel) return console.log("❌ Channel panel tidak ditemukan");
 
-  let data = {};
-  if (fs.existsSync(PANEL_MESSAGE_FILE)) {
-    data = JSON.parse(fs.readFileSync(PANEL_MESSAGE_FILE));
+  const savedId = loadPanelId();
+
+  // Cari semua pesan milik bot di channel panel (tidak bergantung ke panel.json saja)
+  const recent = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+  const botMsgs = recent
+    ? [...recent.filter(m => m.author.id === client.user.id).values()] // urut terbaru dulu
+    : [];
+
+  let panelMsg =
+    botMsgs.find(m => m.id === savedId) ||
+    botMsgs.find(m => m.embeds[0]?.title === PANEL_TITLE) ||
+    null;
+
+  if (!panelMsg && savedId) {
+    panelMsg = await channel.messages.fetch(savedId).catch(() => null);
+  }
+
+  // Hapus panel lama / duplikat yang numpuk
+  for (const m of botMsgs) {
+    if (m.id === panelMsg?.id) continue;
+    await m.delete().catch(() => {});
+    console.log(`🧹 Hapus panel duplikat ${m.id}`);
   }
 
   const embed = new EmbedBuilder()
     .setColor(0xff69b4)
-    .setTitle("Gender Catalog")
+    .setTitle(PANEL_TITLE)
     .setDescription(
 `Silahkan pilih roles sesuai dengan gender kamu. Untuk role Ladies silahkan contact ADMIN untuk melakukan verifikasi.
 
 🚹┃ **Boy's**
-Langsung pilih melalui dropdown.
+Langsung klik tombol di bawah.
 
 🌸┃ **Girl's**
 Harus melalui verifikasi (Join Voice).`
     )
     .setImage("https://media.discordapp.net/attachments/1487590787284734143/1494745021381873835/Black_and_Silver_Star_Dust_Love_Facebook_Cover_1.png");
 
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId("gender_select")
-    .setPlaceholder("Click menu ini untuk memilih roles!")
-    .addOptions([
-      {
-        label: "Boy's",
-        value: "Boy's",
-        emoji: "🚹"
-      }
-    ]);
+  const btnBoy = new ButtonBuilder()
+    .setCustomId("gender_boy")
+    .setLabel("Boy's")
+    .setEmoji("🚹")
+    .setStyle(ButtonStyle.Primary);
 
-  const row = new ActionRowBuilder().addComponents(menu);
+  const btnGirl = new ButtonBuilder()
+    .setCustomId("gender_girl")
+    .setLabel("Girl's")
+    .setEmoji("🌸")
+    .setStyle(ButtonStyle.Secondary);
 
-  if (data.messageId) {
+  const row = new ActionRowBuilder().addComponents(btnBoy, btnGirl);
+
+  if (panelMsg) {
     try {
-      const oldMsg = await channel.messages.fetch(data.messageId);
-
-      await oldMsg.edit({
+      await panelMsg.edit({
         embeds: [embed],
         components: [row]
       });
 
+      savePanelId(panelMsg.id);
       console.log("♻️ Panel di-update");
       return;
     } catch {
-      console.log("⚠️ Panel hilang, kirim ulang");
+      console.log("⚠️ Gagal edit panel, kirim ulang");
+      await panelMsg.delete().catch(() => {});
     }
   }
 
@@ -136,17 +177,14 @@ Harus melalui verifikasi (Join Voice).`
     components: [row]
   });
 
-  fs.writeFileSync(PANEL_MESSAGE_FILE, JSON.stringify({
-    messageId: msg.id
-  }));
-
+  savePanelId(msg.id);
   console.log("✅ Panel dikirim");
 }
 
 // =======================
 // 🚀 READY
 // =======================
-client.on("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`🔥 Login sebagai ${client.user.tag}`);
   connectToVC();
   await sendOrUpdatePanel();
@@ -164,41 +202,54 @@ client.on("messageCreate", async (msg) => {
 });
 
 // =======================
-// 🎯 SELECT MENU
+// 🎯 BUTTON HANDLER
 // =======================
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isStringSelectMenu()) return;
+  if (!interaction.isButton()) return;
 
-  if (interaction.customId === "gender_select") {
+  // 🚹 BOY'S
+  if (interaction.customId === "gender_boy") {
     const member = interaction.member;
-    const roleGent = interaction.guild.roles.cache.get(ROLE_GENTLEMAN);
 
-    if (interaction.values[0] === "Boy's") {
-
-      if (member.roles.cache.has(ROLE_GENTLEMAN)) {
-        return interaction.reply({
-          content: "⚠️ Kamu sudah punya role ini",
-          ephemeral: true
-        });
-      }
-
-      await member.roles.add(roleGent);
-
-      const embed = new EmbedBuilder()
-        .setColor(0xff69b4)
-        .setTitle("Role Updated")
-        .setDescription(`✅Added role:\n<@&${ROLE_GENTLEMAN}>`)
-        .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: "BETLEHEM • Role System" })
-        .setTimestamp();
-
-      console.log(`🚹 ${interaction.user.tag} pilih Boy's`);
-
+    if (member.roles.cache.has(ROLE_GENTLEMAN)) {
       return interaction.reply({
-        embeds: [embed],
-        ephemeral: true
+        content: "⚠️ Kamu sudah punya role ini",
+        flags: MessageFlags.Ephemeral
       });
     }
+
+    try {
+      await member.roles.add(ROLE_GENTLEMAN);
+    } catch (err) {
+      console.log("❌ Gagal kasih role:", err.message);
+      return interaction.reply({
+        content: "❌ Gagal memberikan role, hubungi ADMIN.",
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0xff69b4)
+      .setTitle("Role Updated")
+      .setDescription(`✅ Added role:\n<@&${ROLE_GENTLEMAN}>`)
+      .setThumbnail(interaction.user.displayAvatarURL())
+      .setFooter({ text: "BETLEHEM • Role System" })
+      .setTimestamp();
+
+    console.log(`🚹 ${interaction.user.tag} pilih Boy's`);
+
+    return interaction.reply({
+      embeds: [embed],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  // 🌸 GIRL'S
+  if (interaction.customId === "gender_girl") {
+    return interaction.reply({
+      content: "🌸 Untuk role **Girl's**, silahkan join voice verifikasi dan hubungi **ADMIN** ya!",
+      flags: MessageFlags.Ephemeral
+    });
   }
 });
 
